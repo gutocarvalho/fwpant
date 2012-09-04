@@ -1,0 +1,132 @@
+ #!/bin/sh
+ 
+ PATH=/sbin:/bin:/usr/sbin:/usr/bin
+ OPTIONS=""
+ 
+ . /lib/lsb/init-functions
+ 
+ FWFILE="/root/rules/rc.ecco"
+ IPTABLES="/sbin/iptables"
+ 
+ # fw functions
+ 
+ startfw()
+ {
+         log_daemon_msg "Starting FW firewall..."
+ 
+         modprobe capability >/dev/null 2>&1 || true
+ 
+         # dirs under /var/run can go away on reboots.
+         mkdir -p /var/run/fw/run
+         chmod 775 /var/run/fw/run
+         chown root:root /var/run/fw/run >/dev/null 2>&1 || true
+ 
+         if [ ! -x $FWFILE ]; then
+             log_action_msg "FW firewall script missing - not starting"
+             log_end_msg 1
+             exit 1
+         else
+                 start-stop-daemon --start --quiet --exec $FWFILE \
+                 --pidfile /var/run/fw/run/fw.pid -- $OPTIONS
+         fi
+         log_end_msg 0
+ }
+ 
+ stopfw()
+ {
+ 	log_daemon_msg "Stopping FW firewall service..."
+         # tabela filter
+         $IPTABLES -t filter -F
+         $IPTABLES -t filter -P INPUT ACCEPT
+         $IPTABLES -t filter -P OUTPUT ACCEPT
+         $IPTABLES -t filter -P FORWARD ACCEPT
+         $IPTABLES -t filter -X
+         # tabela nat
+         $IPTABLES -t nat -F
+         $IPTABLES -t nat -P PREROUTING ACCEPT
+         $IPTABLES -t nat -P OUTPUT ACCEPT
+         $IPTABLES -t nat -P POSTROUTING ACCEPT
+         $IPTABLES -t nat -X
+         # tabela mangle
+         $IPTABLES -t mangle -F
+         $IPTABLES -t mangle -P PREROUTING ACCEPT
+         $IPTABLES -t mangle -P INPUT ACCEPT
+         $IPTABLES -t mangle -P FORWARD ACCEPT
+         $IPTABLES -t mangle -P OUTPUT ACCEPT
+         $IPTABLES -t mangle -P POSTROUTING ACCEPT
+         $IPTABLES -t mangle -X
+         log_end_msg 0
+ 
+ }
+ 
+ listfw()
+ {
+ 	echo -e "\nTabela: FILTER"
+         $IPTABLES -nvL
+         echo -e "\nTabela: NAT"
+         $IPTABLES -t nat -nvL
+         echo -e "\nTabela: MANGLE"
+         $IPTABLES -t mangle -nvL
+ }
+ 
+ panicfw()
+ {
+ 	log_daemon_msg "Ativando modo PANICO, dropando tudo..."
+         $IPTABLES -t filter -P INPUT DROP
+         $IPTABLES -t filter -P OUTPUT DROP
+         $IPTABLES -t filter -P FORWARD DROP
+         $IPTABLES -t filter -X
+         log_end_msg 0
+ }
+ 
+ freefw()
+ {
+         log_daemon_msg "Mascaramento simples ativado..."
+ 	$IPTABLES -t nat -A POSTROUTING -j MASQUERADE
+         /bin/echo 1 > /proc/sys/net/ipv4/ip_forward
+         log_end_msg 0
+ 
+ }
+ 
+ case "$1" in
+ 	start)
+ 	startfw
+ 	;;
+ 	stop|flush)
+     	stopfw
+ 	;;
+ 	list)
+     	listfw
+ 	;;
+ 	panic)
+ 	stopfw
+ 	panicfw
+     	;;
+    	free)
+ 	stopfw
+ 	freefw
+ 	;;
+ 	reload)
+ 	stopfw
+ 	sleep 2
+ 	startfw
+ 	;;
+ 	restart)
+ 	stopfw
+ 	startfw
+    	;;	
+ 	*)
+ 	echo -e "\n/etc/init.d/fw [ opcoes ]
+ 
+         start     - inicia a firewall
+         stop      - desliga a firewall
+         restart   - reinicia a firewall
+         reload    - recarrega a firewall
+         list      - lista as regras \n
+         free      - ativa mascaramento simples
+         panic     - tabela filter em drop\n"
+ 
+ 	exit 1
+     	;;
+ esac
+ exit 0

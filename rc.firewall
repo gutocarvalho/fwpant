@@ -1,0 +1,902 @@
+#!/bin/bash
+
+###
+### Projeto Firewall à moda Pantaneira
+###
+
+###
+### Descricao:
+###
+### Script para a configuracao de
+### uma firewall netfilter/iptables um
+### servidor com 2 interfaces, sendo elas LAN e WAN.
+###
+
+###
+### Autor do projeto:
+### Guto Carvalho (guto@gutocarvalho.net)
+###
+
+###
+### Colaborador(es) do projeto:
+### Ulysses Almeida (ulysses.almeida@gmail.com)
+### Patrick Ximenes (hexaclamys@gmail.com)
+###
+
+###
+### Data de inicio do projeto: 2003-05-12
+###
+
+###
+### Referencias:
+###
+### http://www.netfilter.org/
+### http://www.netfilter.org/documentation/index.html#FAQ
+### http://www.netfilter.org/documentation/index.html#HOWTO
+### http://iptables-tutorial.frozentux.net/iptables-tutorial.html
+### http://www.sentry.net/~obsid/
+### http://www.linuxguruz.com/iptables/
+###
+
+###
+### Licença:
+###
+### Script sob licença GPLv2
+###
+
+###
+#################################
+### paths
+###
+
+# caminho para iptables
+IPTABLES="/sbin/iptables"
+
+# caminho para diretorio de configuracoes da firewall
+FWPATH="/root/rules"
+
+
+###
+#################################
+### interfaces
+###
+
+### veja o script interfaces.sh no diretorio
+### da firewall, voce pode adptar e usar para
+### capturas automaticas dos dados das interfaces
+### de rede ao invés de setá-las manualmente
+
+# configuracoes da interface loopack
+LO_NIC="lo"
+LO_IPA="127.0.0.1"
+LO_NET="127.0.0.0/8"
+
+# configuracoes da interface LAN
+LAN_NIC="eth0"
+LAN_IPA="10.0.2.15"
+LAN_BRD="10.0.2.255"
+LAN_MSK="255.255.255.0"
+LAN_NET="10.0.2.0/24"
+
+# interface de comunicao WAN
+WAN_NIC="eth1"
+WAN_IPA="200.199.199.1"
+WAN_BRD="200.199.199.255"
+WAN_MSK="255.255.255.0"
+WAN_NET="200.199.199.0/24"
+
+# imprimindo informacoes da LAN nic
+echo -e "\ninterface: $LAN_NIC"
+echo "endereco: $LAN_IPA"
+echo "broadcast: $LAN_BRD"
+echo "mascara: $LAN_MSK"
+echo -e "rede: $LAN_NET\n"
+
+# imprimindo informacoes da WAN nic
+echo -e "\ninterface: $WAN_NIC"
+echo "endereco: $WAN_IPA"
+echo "broadcast: $WAN_BRD"
+echo "mascara: $WAN_MSK"
+echo -e "rede: $WAN_NET\n"
+
+###
+#########################################
+### controle de acesso a este servidor
+###
+
+### portas liberadas na interface LAN
+### aqui estamos liberando acesso 
+### a servicos que estao rodando neste servidor
+### que serao acessados atraves da interface LAN
+
+OPENLAN="YES"	#YES/NO, ligar ou nao essas liberacoes
+#
+TCP_LAN_RULE="YES"	#YES/NO, liberar portas tcp ou nao
+TCP_LAN_OPEN="53 22"
+#
+UDP_LAN_RULE="YES"	#YES/NO, liberar portas udp ou nao
+UDP_LAN_OPEN="53"
+#
+ICMP_LAN_RULE="YES"	#YES/NO, liberar mensagens ICMP ou nao
+ICMP_LAN_TYPES="0 3 8 11"
+
+### portas liberadas na interface WAN
+### aqui estamos liberando acesso 
+### a servicos que estao rodando neste servidor
+### que serao acessados atraves da interface WAN
+
+OPENWAN="YES"	#YES/NO
+#
+TCP_WAN_RULE="YES"
+TCP_WAN_OPEN="22 53"
+#
+UDP_WAN_RULE="YES"
+UDP_WAN_OPEN="53"
+#
+ICMP_WAN_RULE="YES"
+ICMP_WAN_TYPES="0 3 8 11"
+
+###
+############################################################################
+### liberando acesso a servicos especificos na internet
+### para clientes da rede interna
+###
+
+# abaixo existem variaveis que relacionam os servicos que
+# podem ser utitlizandos pelos clientes de nossa LAN
+# na internet
+
+# 20 FTP-DATA
+# 21 FTP
+# 22 SSH
+# 53 DNS
+# 46056 SKYPE
+
+# interface LAN
+
+FWD_LAN_GO="YES" # YES/NO
+
+FWD_LAN_TCP_RULE="YES"
+FWD_LAN_TCP_PTS="21 22 53 80 443"
+
+FWD_LAN_UDP_RULE="YES"
+FWD_LAN_UDP_PTS="20 53"
+
+FWD_LAN_ICMP_RULE="YES"
+FWD_LAN_ICMP_PTS="0 3 8 11"
+
+###
+############################################################################
+### liberando acesso completo para
+### clientes especiais, significa que acessam internet sem restrições
+###
+
+TRUST_LAN="YES"	#YES/NO
+TRUST_LAN_IPS="$FWPATH/listas/acesso_clientes_especiais.txt"
+
+############################################################################
+### prioridade de pacotes
+### para clientes da rede interna (sysadmins)
+###
+
+# setando prioridade para MACS de notebooks dos sysadmins
+
+MACPRIO="NO"  # YES/NO
+MULTIMACS="	00:14:A4:79:21:D3 
+		00:18:DE:68:1F:14"
+
+IPSPRIO="NO"  # YES/NO
+MULTIIPS="	192.100.100.1
+		192.100.100.2" 
+
+###
+#######################################################
+### bloqueios de tentativas de conexao ao servidor
+###
+
+# bloqueando ips que tentem se conectar em nosso servidor firewall atraves
+# da interface LAN, ex: 10.0.200.100
+
+IPBLOQ_LAN_RULE="NO"
+IPBLOQ_LAN_ADDR="$FWPATH/listas/bloqueio_de_acesso_ips_lan.txt"
+
+# bloqueando ips que tentem se conectar em nosso servidor firewall atraves
+# da interface WAN, ex: 200.200.200.200
+
+IPBLOQ_WAN_RULE="NO"
+IPBLOQ_WAN_ADDR="$FWPATH/listas/bloqueio_de_acesso_ips_wan.txt"
+
+###
+#######################################################
+### bloqueios de tentativas de conexao a partir da rede lan,
+### significa que um IP da rede interna nao conseguira
+### usar nenhum servico na internet
+###
+
+LANBLOQ_RULE="NO"
+LANBLOQ_ADDR="$FWPATH/listas/bloqueio_de_acesso_clientes_lan.txt"
+
+###
+###################################################################
+###  configurando masquerade, ip_forward e protecoes variadas
+###
+
+# habilita ip forward
+IPFWD="YES"	#YES/NO
+
+# macaramento da rede para internet separado por interfaces
+
+MASQLAN="YES"	#YES/NO
+MASQWAN="NO"	#YES/NO
+
+###
+#################################
+### checagens de conexoes
+###
+
+###
+### checar conexoes SSH e DROPAR
+### tentativas excessivas?
+###
+
+SSH_PROTECT="YES"
+SSH_TCPPORT="22"
+ 
+### lista branca da checagem ssh
+### esses aqui não passam pela checagem
+SSH_TRUSTED_OPT="NO"
+SSH_TRUSTED_HOSTS="192.168.11.11/32 201.41.11.48/29"
+
+###
+### checar pacotes e bloquear aqueles 
+### classificados como INVALIDOS?
+### (experimental)
+###
+
+PKG_STATE_INVALID="NO" #YES/NO
+
+###
+### manter conexoes marcadas como relacionadas e estabelecidas?
+###
+
+PKG_STATE_RE="YES" #YES/NO
+
+###
+### checar flags de novas conexao de acordo com 3 way handshake?
+###
+
+PKG_FLAGS_NNS="YES" #YES/NO
+
+###
+### checar flags e comparar com tecnicas portscanners?
+### (experimental)
+###
+
+PKG_FLAGS_FUP="NO" #YES/NO
+
+###
+################################
+### log
+###
+
+# habilita logs para debug nas cadeias da tabela filter
+
+LOG_FI="YES"	# YES/NO
+LOG_FF="YES"	# YES/NO
+LOG_FO="YES"	# YES/NO
+
+########################################
+### carregando rotas
+###
+
+# ajustando rotas de saida
+#. /root/rules/rotas/velox-balance.sh
+
+# ajustando rotas para conexao em clientes
+#. /root/rotas/clientes.sh
+
+
+
+
+
+
+
+
+
+
+# 
+# CUIDADO COM ALTERACOES DAQUI PARA BAIXO
+# REQUER CONHECIMENTO EM SHELLSCRIPT E NETFILTER/IPTABLES.
+#
+
+
+
+
+
+
+
+
+
+
+### ajustando parametros do proc/sysctl ######################################
+
+# junto ao kernel source voce pode consultar os seguintes papers
+# para otimizar as configuracoes do sysctl
+
+# linux/Documentation/filesystems/proc.txt
+# linux/Documentation/networking/ip-sysctl.txt
+
+## configurando ip_forward
+
+if [ $IPFWD = "YES" ];then
+	if [ -e /proc/sys/net/ipv4/ip_forward ]; then
+		echo "1" > /proc/sys/net/ipv4/ip_forward
+	else
+		echo "Opsss: /proc/sys/net/ipv4/ip_forward nao existe"
+		echo "(Isto pode ser um problema!)"
+		echo
+	fi
+fi
+
+## Set the maximum number of connections to track. (Kernel Default: 2048)
+#	if [ -e /proc/sys/net/ipv4/ip_conntrack_max ]; then
+#  		echo "4096" > /proc/sys/net/ipv4/ip_conntrack_max
+#	fi
+
+## Local port range for TCP/UDP connections
+#	if [ -e /proc/sys/net/ipv4/ip_local_port_range ]; then
+#  		echo -e "32768\t61000" > /proc/sys/net/ipv4/ip_local_port_range
+#	fi
+
+## Log packets with impossible addresses to kernel log.
+#	if [ -e /proc/sys/net/ipv4/conf/all/log_martians ]; then
+#		echo "1" > /proc/sys/net/ipv4/conf/all/log_martians
+#	fi
+
+## Ignore any broadcast icmp echo requests
+#	if [ -e /proc/sys/net/ipv4/icmp_echo_ignore_broadcasts ]; then
+#		echo "1" > /proc/sys/net/ipv4/icmp_echo_ignore_broadcasts
+#	fi
+
+
+
+### carregamento de modulos especificos ########################
+
+/sbin/modprobe ip_nat_ftp
+/sbin/modprobe ip_conntrack_ftp
+
+
+###
+#################################################################
+### lipando regras em cadeias
+### setando politica default em cadeias
+### apagando cadeias criadas manualmente
+
+### tabela filter
+$IPTABLES -t filter -F
+$IPTABLES -t filter -P INPUT ACCEPT
+$IPTABLES -t filter -P OUTPUT ACCEPT
+$IPTABLES -t filter -P FORWARD ACCEPT
+$IPTABLES -t filter -X
+
+### tabela nat
+$IPTABLES -t nat -F
+$IPTABLES -t nat -P PREROUTING ACCEPT
+$IPTABLES -t nat -P OUTPUT ACCEPT
+$IPTABLES -t nat -P POSTROUTING ACCEPT
+$IPTABLES -t nat -X
+
+### tabela mangle
+$IPTABLES -t mangle -F
+$IPTABLES -t mangle -P PREROUTING ACCEPT
+$IPTABLES -t mangle -P INPUT ACCEPT
+$IPTABLES -t mangle -P FORWARD ACCEPT
+$IPTABLES -t mangle -P OUTPUT ACCEPT
+$IPTABLES -t mangle -P POSTROUTING ACCEPT
+$IPTABLES -t mangle -X
+ 
+###############################################################
+### setando politica especica para cadeias default
+### tabela: filter
+
+$IPTABLES -t filter -P INPUT DROP
+$IPTABLES -t filter -P OUTPUT DROP
+$IPTABLES -t filter -P FORWARD DROP
+
+###
+#####################################################
+### criando cadeias definidas pelo administrador
+### tabela: filter
+###
+
+$IPTABLES -t filter -N TCP_LAN_PACKETS
+$IPTABLES -t filter -N UDP_LAN_PACKETS
+$IPTABLES -t filter -N ICMP_LAN_TYPES
+
+$IPTABLES -t filter -N TCP_WAN_PACKETS
+$IPTABLES -t filter -N UDP_WAN_PACKETS
+$IPTABLES -t filter -N ICMP_WAN_TYPES
+
+$IPTABLES -t filter -N CHECK_STATE
+$IPTABLES -t filter -N CHECK_FLAGS
+
+$IPTABLES -t filter -N SSH_WHITELIST
+$IPTABLES -t filter -N SSH_CHECK
+
+### regras da cadeia CHECK_STATE
+### tabela: filter
+
+### checando estado de pacote, se for classificado como INVALIDO
+### estaremos dropando o pacote
+
+if [ $PKG_STATE_INVALID = "YES" ];then
+	$IPTABLES -t filter -A CHECK_STATE -m state --state INVALID -j LOG \
+		--log-level 6 --log-prefix "[CHECK_STATE-DROP-INVALID]: "
+	$IPTABLES -t filter -A CHECK_STATE -m state --state INVALID -j DROP
+fi
+
+### checado estado de conexao relacionado ou estabilizado
+### se for classificado de forma positiva, mantem as conexoes
+
+if [ $PKG_STATE_RE = "YES" ];then
+	$IPTABLES -t filter -A CHECK_STATE -m state --state RELATED,ESTABLISHED -j ACCEPT
+fi
+
+### checando flag de pacotes
+### se o estado da conexao for new e a flag diferente de SYN
+### o pacote será dropado
+
+if [ $PKG_FLAGS_NNS = "YES" ];then
+	$IPTABLES -t filter -A CHECK_FLAGS -p tcp ! --syn -m state --state NEW -j LOG \
+		--log-level 6 --log-prefix "[CHECK_FLAGS_DROP_NOTSYN]: "
+	$IPTABLES -t filter -A CHECK_FLAGS -p tcp ! --syn -m state --state NEW -j DROP 
+fi
+
+### checando flag de pacotes de tentativa de portscanner
+### se os pacotes coincidirem com o padrao abaixo a conexao
+### sera dropada
+
+if [ $PKG_FLAGS_FUP = "YES" ];then
+	$IPTABLES -A CHECK_FLAGS -p tcp --tcp-flags ALL FIN,URG,PSH -m limit \
+		--limit 5/minute -j LOG --log-level 6 --log-prefix "[CHECK_FLAGS_DROP_NMAP]: "
+	$IPTABLES -A CHECK_FLAGS -p tcp --tcp-flags ALL FIN,URG,PSH -j DROP
+fi
+
+### regras das cadeias TCP/UPD/ICMP LAN_PACKETS
+### tabela: filter
+
+### estas cadeia *_LAN_PACKETS vao receber os pacotes entrando na 
+### inteface LAN e vai tratalos de acordo com o conteudo das variaveis
+
+if [ $OPENLAN = "YES" ] && [ $TCP_LAN_RULE = "YES" ];then
+	for ap in $TCP_LAN_OPEN;do
+		$IPTABLES -t filter -A TCP_LAN_PACKETS -i $LAN_NIC -p TCP \
+			--dport $ap -j ACCEPT
+	done
+fi
+
+if [ $OPENLAN = "YES" ] && [ $UDP_LAN_RULE = "YES" ];then
+        for ap in $UDP_LAN_OPEN;do
+                $IPTABLES -t filter -A UDP_LAN_PACKETS -i $LAN_NIC -p UDP \
+                        --dport $ap -j ACCEPT
+        done
+fi
+
+if [ $OPENLAN = "YES" ] && [ $ICMP_LAN_RULE = "YES" ];then
+        for it in $ICMP_LAN_TYPES;do
+                $IPTABLES -t filter -A ICMP_LAN_TYPES -i $LAN_NIC -p ICMP \
+                        --icmp-type $it -j ACCEPT
+        done
+fi
+
+### regras das cadeias TCP/UPD/ICMP WAN_PACKETS
+### tabela: filter
+
+### estas cadeia *_LAN_PACKETS vao receber os pacotes entrando na 
+### inteface WAN e vai tratalos de acordo com o conteudo das variaveis
+
+if [ $OPENWAN = "YES" ] && [ $TCP_WAN_RULE = "YES" ];then
+	for ap in $TCP_WAN_OPEN;do
+		$IPTABLES -t filter -A TCP_WAN_PACKETS -i $WAN_NIC -p TCP \
+			--dport $ap -j ACCEPT
+	done
+fi
+
+if [ $OPENWAN = "YES" ] && [ $UDP_WAN_RULE = "YES" ];then
+        for ap in $UDP_WAN_OPEN;do
+                $IPTABLES -t filter -A UDP_WAN_PACKETS -i $WAN_NIC -p UDP \
+                        --dport $ap -j ACCEPT
+        done
+fi
+
+
+if [ $OPENWAN = "YES" ] && [ $ICMP_WAN_RULE = "YES" ];then
+        for it in $ICMP_WAN_TYPES;do
+		$IPTABLES -t filter -A ICMP_WAN_TYPES -i $WAN_NIC -p ICMP \
+                        --icmp-type $it -j ACCEPT
+        done
+fi
+
+### regras da cadeia SSH_WHITELIST e SSH_CHECK
+### tabela: filter
+
+### esta cadeia faz tratamento de pacotes SSH e de acordo com analise
+### bloqueia tentativas de acesso por forca bruta
+
+if [ "$SSH_PROTECT" == "YES" ];then
+
+	# lista branca
+	if [ "SSH_TRUSTED_OPT" == "YES" ];then
+		for host in $SSH_TRUSTED_HOSTS;do
+			$IPTABLES -t filter -A SSH_WHITELIST -s $host -m recent --remove --name SSH -j ACCEPT
+		done
+	fi
+
+	# checagens
+	$IPTABLES -t filter -A SSH_CHECK -p tcp --dport $SSH_TCPPORT -m state --state NEW -m recent --set --name SSH
+
+	$IPTABLES -t filter -A SSH_CHECK -p tcp --dport $SSH_TCPPORT -m state --state NEW -j SSH_WHITELIST
+
+	$IPTABLES -t filter -A SSH_CHECK -p tcp --dport $SSH_TCPPORT \
+	          -m state --state NEW -m recent --update --seconds 60 --hitcount 6 --rttl --name \
+			SSH -j LOG --log-prefix "[SSH_PROTECT_DROP]: "
+
+	$IPTABLES -t filter -A SSH_CHECK -p tcp --dport $SSH_TCPPORT -m state --state NEW \
+		-m recent --update --seconds 60 --hitcount 6 --rttl --name SSH -j DROP
+fi
+
+
+###
+##################################
+### Daqui para frente inicia-se o tratamento dos pacotes,
+### antes deste ponto estavamos apenas criando regras
+### para tratar conexoes, mas a partir daqui estaremos
+### tratando as conexoes e direcionando para estas cadeias
+### acima fazerem a checagem
+###
+### As regras de tratamento estao em um ordem logica de entrada
+### processamento e saida para facilitar a leitura e a 
+### adicao de novas regras.
+###
+### Qualquer nova regra relacionada as tabelas FILTER,NAT e MANGLE
+### deve ser colocada a partir deste ponto no espaco denominado.
+###
+
+# n01. Prerouting Mangle
+# n02. Prerouting Nat
+# n03. Input Mangle
+# n04. Input Filter
+# n05. Forward Mangle
+# n06. Forward Filter
+# n07. Output Mangle
+# n08. Output Nat
+# n09. Output Filter
+# n10. Postrouting Mangle
+# n11. Postrouting Nat
+
+# use os códigos para fazer buscas n08 leva para Output Nat
+
+###############################################################
+### regras n01
+### cadeia: PREROUTING 
+### tabela: MANGLE 
+
+
+###############################################################
+### regras n02
+### cadeia: PREROUTING
+### tabela: nat
+
+# redirecionando porta 80 para 3128 no mesmo servidor (proxy transparente)
+#$IPTABLES -t nat -A PREROUTING -p tcp -s $LAN_NET --dport 80 -j REDIRECT --to 10.0.xxx.xxx:3128
+
+# redirecionando pora 22 para 10222 no mesmo servidor
+#$IPTABLES -t nat -A PREROUTING -i $LAN_NIC -p tcp --dport 22 -j REDIRECT --to-port 10222
+
+# redirecionando porta 25 para outro servidor (necessita de regra de liberação na cadeia forward/filter)
+#$IPTABLES -t nat -A PREROUTING -p tcp -i $LAN_NIC -d $LAN_IPA --dport 25 -j DNAT --to 10.0.xxx.xxx:25
+
+# redirecionando porta 80 para outro servidor (necessita de regra de liberação na cadeia forward/filter)
+#$IPTABLES -t nat -A PREROUTING -p tcp -i $LAN_NIC -d $LAN_IPA --dport 80 -j DNAT --to 10.0.xxx.xxx:80
+
+# redirecionando porta 443 para outro servidor (necessita de regra de liberação na cadeia forward/filter)
+#$IPTABLES -t nat -A PREROUTING -p tcp -i $LAN_NIC -d $LAN_IPA --dport 443 -j DNAT --to 10.0.xxx.xxx:443
+
+###############################################################
+### regras n03
+### cadeia: INPUT
+### tabela: mangle
+
+## TOS stuff: (type: iptables -m tos -h)
+## Minimize-Delay 16 (0x10)
+## Maximize-Throughput 8 (0x08)
+## Maximize-Reliability 4 (0x04)
+## Minimize-Cost 2 (0x02)
+## Normal-Service 0 (0x00)
+
+# ajustando TOS para que pacotes dos notebooks dos sysadmins tenham menor delay
+
+if [ $MACPRIO = "YES" ];then
+	for MACS in $MULTIMACS;do
+		$IPTABLES -t mangle -A INPUT -m mac --mac-source $MACS -j TOS --set-tos 16
+	done
+fi
+
+if [ $IPSPRIO = "YES" ];then
+	for IPS in $MULTIIPS;do
+		$IPTABLES -t mangle -A INPUT -s $IPS -j TOS --set-tos 16
+	done
+fi
+
+# ajustando TOS para minimizar o delay de pacotes ssh
+
+$IPTABLES -t mangle -A INPUT -p tcp --sport $SSH_TCPPORT -j TOS --set-tos 16
+
+
+###############################################################
+### regras n04
+### cadeia: INPUT
+### tabela: filter
+
+# checando flags dos pacotes
+
+## obs.: aqui as conexoes que entram no servidor sao enviadas para cadeia
+## checkflags a fim de verificar questoes de seguranca
+
+$IPTABLES -t filter -A INPUT -m tcp -p tcp -j CHECK_FLAGS
+
+# checando estado dos pacotes
+
+## obs.:  se conexao chegou aqui passou ilesa pela ultima checagem
+## agora vamos verificar o estado da conexao, estamos enviando
+## para uma nova cadeia
+
+$IPTABLES -t filter -A INPUT -j CHECK_STATE
+
+# regras para loopback
+
+## obs.: aqui permitimos o acesso ao loopback vindo das interfaces locais
+
+$IPTABLES -t filter -A INPUT -p ALL -i $LO_NIC -s $LO_IPA -j ACCEPT
+$IPTABLES -t filter -A INPUT -p ALL -i $LO_NIC -s $LAN_IPA -j ACCEPT
+$IPTABLES -t filter -A INPUT -p ALL -i $LO_NIC -s $WAN_IPA -j ACCEPT
+
+# bloqueando conexoes a esta firewall partindo da rede LAN
+
+if [ $IPBLOQ_LAN_RULE == "YES" ];then
+	for ipaddr in `cat $IPBLOQ_LAN_ADDR||grep -v ^#|grep -v ^$`;do
+		$IPTABLES -t filter -A INPUT -i $LAN_NIC -s $ipaddr -j DROP
+	done
+fi	
+
+# bloqueando conexoes a esta firewall partindo da rede WAN
+
+if [ $IPBLOQ_WAN_RULE == "YES" ];then
+	for ipaddr in `cat $IPBLOQ_WAN_ADDR||grep -v ^#|grep -v ^$`;do
+		$IPTABLES -t filter -A INPUT -i $WAN_NIC -s $ipaddr -j DROP
+	done
+fi	
+
+# checando conexoes no sshd, protecao contra ataques de dicionario/muitas conexoes
+
+$IPTABLES -t filter -A INPUT -p tcp -i $LAN_NIC --dport $SSH_TCPPORT -m state --state NEW -j SSH_CHECK
+$IPTABLES -t filter -A INPUT -p tcp -i $WAN_NIC --dport $SSH_TCPPORT -m state --state NEW -j SSH_CHECK
+
+# tratando pacotes entrando no servidor pela iface LAN
+
+$IPTABLES -t filter -A INPUT -p TCP -i $LAN_NIC -j TCP_LAN_PACKETS
+$IPTABLES -t filter -A INPUT -p UDP -i $LAN_NIC -j UDP_LAN_PACKETS
+$IPTABLES -t filter -A INPUT -p ICMP -i $LAN_NIC -j ICMP_LAN_TYPES
+
+# tratando pacotes entrando no servidor pela iface WAN
+
+$IPTABLES -t filter -A INPUT -p TCP -i $WAN_NIC -j TCP_WAN_PACKETS
+$IPTABLES -t filter -A INPUT -p UDP -i $WAN_NIC -j UDP_WAN_PACKETS
+$IPTABLES -t filter -A INPUT -p ICMP -i $WAN_NIC -j ICMP_WAN_TYPES
+
+# dropando e logando fragmentos perdidos
+
+if [ $LOG_FI = "YES" ];then
+	$IPTABLES -t filter -A INPUT -p tcp -j LOG --log-level 6 \
+        	  --log-ip-options --log-prefix '[FI-DROP-TCP]: '
+
+	$IPTABLES -t filter -A INPUT -p udp -j LOG --log-level 6 \
+        	  --log-ip-options --log-prefix '[FI-DROP-UDP]: '
+
+	$IPTABLES -t filter -A INPUT -p icmp -j LOG --log-level 6 \
+        	  --log-ip-options --log-prefix '[FI-DROP-ICMP]: '
+
+	$IPTABLES -t filter -A INPUT -p igmp -j LOG --log-level 6 \
+        	  --log-ip-options --log-prefix '[FI-DROP-IGMP]: '
+
+	$IPTABLES -t filter -A INPUT -j DROP
+fi
+
+###############################################################
+### regras n05
+### cadeia: FORWARD
+### table: mangle
+
+
+##############################################################
+### regras n06
+### cadeia: FORWARD
+### tabela: filter
+
+# checando flags dos pacotes
+
+$IPTABLES -t filter -A FORWARD -m tcp -p tcp -j CHECK_FLAGS
+
+# checando estado dos pacotes
+
+$IPTABLES -t filter -A FORWARD -j CHECK_STATE
+
+# liberando acesso a clientes especiais
+
+if [ $TRUST_LAN == "YES" ];then
+	for ipaddr in `cat $TRUST_LAN_IPS|grep -v ^#|grep -v ^$`;do
+		$IPTABLES -t filter -A FORWARD -i $LAN_NIC -s $ipaddr -j DROP
+	done
+fi	
+
+# bloqueando conexoes dos clientes da rede interna para a internet
+
+if [ $LANBLOQ_RULE == "YES" ];then
+	for ipaddr in `cat $LANBLOQ_ADDR||grep -v ^#|grep -v ^$`;do
+		$IPTABLES -t filter -A FORWARD -i $LAN_NIC -s $ipaddr -j DROP
+	done
+fi	
+
+# liberando forward para portas especificas na internet para a rede LAN
+
+if [ $FWD_LAN_GO = "YES" ]  && [ $FWD_LAN_TCP_RULE = "YES" ];then
+	for pt in $FWD_LAN_TCP_PTS;do
+		$IPTABLES -t filter -A FORWARD -s $LAN_NET -p tcp --dport $pt -j ACCEPT
+	done
+fi
+
+if [ $FWD_LAN_GO = "YES" ] && [ $FWD_LAN_UDP_RULE = "YES" ];then
+	for pt in $FWD_LAN_UDP_PTS;do
+		$IPTABLES -t filter -A FORWARD -s $LAN_NET -p udp --dport $pt -j ACCEPT
+	done
+fi
+
+if [ $FWD_LAN_GO = "YES" ] && [ $FWD_LAN_ICMP_RULE = "YES" ];then
+	for it in $FWD_LAN_ICMP_PTS;do
+		$IPTABLES -t filter -A FORWARD -p ICMP -s $LAN_NET --icmp-type $it -j ACCEPT
+	done
+fi 
+
+# redirecionamento porta 25 para outro servidor (ligada a regra prerouting nat)
+#$IPTABLES -t filrer -A FORWARD -p tcp --dport 25 -d 10.0.xxx.xxx -j ACCEPT
+
+# redirecionamento porta 80 para outro servidor (ligada a regra prerouting nat)
+#$IPTABLES -t filrer -A FORWARD -p tcp --dport 80 -d 10.0.xxx.xxx -j ACCEPT
+
+# redirecionamento porta 443 para outro servidor (ligada a regra prerouting nat)
+#$IPTABLES -t filrer -A FORWARD -p tcp --dport 443 -d 10.0.xxx.xxx -j ACCEPT
+
+# dropando fragmentos perdidos
+
+if [ $LOG_FF = "YES" ];then
+	$IPTABLES -t filter -A FORWARD -p tcp -j LOG --log-level 6 \
+        	 --log-ip-options --log-prefix '[FF-DROP-TCP]: '
+
+	$IPTABLES -t filter -A FORWARD -p udp -j LOG --log-level 6 \
+        	 --log-ip-options --log-prefix '[FF-DROP-UDP]: '
+
+	$IPTABLES -t filter -A FORWARD -p icmp -j LOG --log-level 6 \
+        	 --log-ip-options --log-prefix '[FF-DROP-ICMP]: '
+
+	$IPTABLES -t filter -A FORWARD -p igmp -j LOG --log-level 6 \
+        	 --log-ip-options --log-prefix '[FF-DROP-IGMP]: '
+
+	$IPTABLES -t filter -A FORWARD -j DROP
+fi
+
+
+###############################################################
+### regras n07
+### cadeia: OUTPUT
+### tabela: mangle
+
+## TOS stuff: (type: iptables -m tos -h)
+## Minimize-Delay 16 (0x10)
+## Maximize-Throughput 8 (0x08)
+## Maximize-Reliability 4 (0x04)
+## Minimize-Cost 2 (0x02)
+## Normal-Service 0 (0x00)
+
+# ajustando prioridade de pacotes dos notebooks dos sysadmins por mac ou ip
+# menor delay de processamento
+
+if [ $MACPRIO = "YES" ];then
+	for MACS in $MULTIMACS;do
+		$IPTABLES -t mangle -A OUTPUT -m mac --mac-source $MACS -j TOS --set-tos 16
+	done
+fi
+
+if [ $IPSPRIO = "YES" ];then
+	for IPS in $MULTIIPS;do
+		$IPTABLES -t mangle -A OUTPUT -s $IPS -j TOS --set-tos 16
+	done
+fi
+
+# ajustando TOS para conexoes ssh
+# menor delay de processamento
+
+$IPTABLES -t mangle -A OUTPUT -p tcp --sport $SSH_TCPPORT -j TOS --set-tos 16
+
+
+
+###############################################################
+### regras n08
+### cadeia: OUTPUT
+### tabela: nat
+
+
+
+###############################################################
+### regras n09
+### cadeia: OUTPUT
+### tabela: filter
+
+# checando flags dos pacotes
+
+$IPTABLES -t filter -A OUTPUT -m tcp -p tcp -j CHECK_FLAGS
+
+# checanndo estado dos pacotes
+
+$IPTABLES -t filter -A OUTPUT -j CHECK_STATE
+
+# mantendo conexoes estabelecidas e relacionadas
+
+$IPTABLES -t filter -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+# regras de OUTPUT liberando interfaces especificas (pouco restritivo)
+
+$IPTABLES -t filter -A OUTPUT -p ALL -s $LO_IPA -j ACCEPT
+$IPTABLES -t filter -A OUTPUT -p ALL -s $LAN_IPA -j ACCEPT
+$IPTABLES -t filter -A OUTPUT -p ALL -s $WAN_IPA -j ACCEPT
+
+# dropando fragmentos perdidos
+
+if [ $LOG_FO = "YES" ];then
+	$IPTABLES -t filter -A OUTPUT -p tcp -j LOG --log-level 6 \
+        	 --log-ip-options --log-prefix '[FO-DROP-TCP]: '
+
+	$IPTABLES -t filter -A OUTPUT -p udp -j LOG --log-level 6 \
+        	 --log-ip-options --log-prefix '[FO-DROP-UDP]: '
+
+	$IPTABLES -t filter -A OUTPUT -p icmp -j LOG --log-level 6 \
+        	 --log-ip-options --log-prefix '[FO-DROP-ICMP]: '
+
+	$IPTABLES -t filter -A OUTPUT -p igmp -j LOG --log-level 6 \
+        	 --log-ip-options --log-prefix '[FO-DROP-IGMP]: '
+
+	$IPTABLES -t filter -A OUTPUT -j DROP
+fi
+
+###############################################################
+### regras n10
+### cadeia: POSTROUTING          
+### tabela: mangle
+
+
+###############################################################
+### regras n11
+### cadeia: POSTROUTING
+### tabela: nat
+
+if [ $MASQLAN = YES ];then
+	$IPTABLES -t nat -A POSTROUTING -s $LAN_NET -j MASQUERADE
+fi	
+
+if [ $MASQWAN = YES ];then
+	$IPTABLES -t nat -A POSTROUTING -s $WAN_NET -j MASQUERADE
+fi
+
+
+
+
+### FIM #######################################################

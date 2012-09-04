@@ -1,0 +1,158 @@
+#!/bin/bash
+ 
+ # chkconfig: 35 99 90
+ #
+ # 35 fala que ele roda no level 3 e 5
+ # 92 e prioridade na inicializacao do sistema
+ # 91 e prioridade no desligamento do sistema
+ 
+ # description: Executa /root/rules/fw.firewall
+ #
+ # processname: fw
+ # pidfile: /var/run/fw.pid
+ # config: /root/rules/fw.firewall
+ # probe: true
+ 
+ # Autor: Guto Carvalho (gutocarvalho@gmail.com)
+ 
+ # Colaborador(es): 
+ # Ulysses Almeida (ulyssesalmeida@gmail.com)
+ # Patrick Ximenez (hexaclamys@gmail.com)
+ 
+ # Data de Criacao: 12/05/2005
+ # Ultima Modificacao: 19/01/2006
+ 
+ # local da iptables
+ IPTABLES=`which iptables`
+ 
+ # local das configuracoes da firewall
+ FW_PATH="/root/rules/rc.cliente"
+ 
+ 
+ 
+ 
+ # carregando functions
+ . /etc/init.d/functions
+ 
+ 
+ 
+ # funcoes deste script
+ 
+ flush()
+ {
+ 	# tabela filter
+         $IPTABLES -t filter -F
+         $IPTABLES -t filter -P INPUT ACCEPT
+         $IPTABLES -t filter -P OUTPUT ACCEPT
+         $IPTABLES -t filter -P FORWARD ACCEPT
+         $IPTABLES -t filter -X
+         # tabela nat
+         $IPTABLES -t nat -F
+         $IPTABLES -t nat -P PREROUTING ACCEPT
+         $IPTABLES -t nat -P OUTPUT ACCEPT
+         $IPTABLES -t nat -P POSTROUTING ACCEPT
+         $IPTABLES -t nat -X
+         # tabela mangle
+         $IPTABLES -t mangle -F
+         $IPTABLES -t mangle -P PREROUTING ACCEPT
+         $IPTABLES -t mangle -P INPUT ACCEPT
+         $IPTABLES -t mangle -P FORWARD ACCEPT
+         $IPTABLES -t mangle -P OUTPUT ACCEPT
+         $IPTABLES -t mangle -P POSTROUTING ACCEPT
+         $IPTABLES -t mangle -X
+ }
+ 
+ stop()
+ {
+ 	flush
+ 	echo_success
+         echo "firewall desligada..."
+ 	echo
+ }
+ 
+ start()
+ {
+         if [ -e $FW_PATH ]; then
+                 $FW_PATH
+ 		echo_success
+ 		echo "firewall ativada..."
+ 		echo
+             else
+ 		echo_failure
+                 echo "Erro: Nao consigo encontrar $FWPATH !"
+                 echo
+         fi
+ 
+ }
+ 
+ list()
+ {
+         echo $"Tabela: FILTER"
+         echo
+         $IPTABLES -nL
+         echo
+         echo $"Tabela: NAT"
+         echo
+         $IPTABLES -t nat -nL
+         echo
+         echo $"Tabela: MANGLE"
+         echo
+         $IPTABLES -t mangle -nL
+ 
+ }
+ 
+ free()
+ {
+ 	flush
+ 	$IPTABLES -t nat -A POSTROUTING -j MASQUERADE
+ 	/bin/echo 1 > /proc/sys/net/ipv4/ip_forward
+ 	echo_success
+ 	echo "mascaremento simples ativado..."
+ }
+ 
+ panic()
+ {
+ 	flush
+         $IPTABLES -t filter -F
+         $IPTABLES -t filter -P INPUT DROP
+         $IPTABLES -t filter -P OUTPUT DROP
+         $IPTABLES -t filter -P FORWARD DROP
+         $IPTABLES -t filter -X
+         echo_success
+         echo "firewall em modo panic, tabela filter em DROP"
+         echo
+ 
+ }
+ 
+ # case de gerenciamento
+ 
+ case "$1" in
+ 	stop|flush)
+ 	stop
+ 	;;
+ 	list)
+ 	list
+ 	;;
+ 	restart|reload)
+ 	start
+ 	;;
+ 	start)
+         start
+ 	;;
+ 	free)
+ 	free
+ 	free
+ 	;;
+         *)
+         echo -e "\nservice fw [ opcoes ]
+ 	
+ 	start	  - inicia a firewall
+ 	stop	  - desliga a firewall
+ 	restart	  - reinicia a firewall
+ 	list	  - lista as regras \n	
+ 	free	  - mascaramento simples
+ 	panic     - tabela filter em drop\n"
+ 
+         exit 1
+ esac
+ exit 0
