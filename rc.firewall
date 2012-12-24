@@ -735,7 +735,7 @@ $IPTABLES -t filter -A FORWARD -j CHECK_STATE
 
 if [ $TRUST_LAN == "YES" ];then
 	for ipaddr in `cat $TRUST_LAN_IPS|grep -v ^#|grep -v ^$`;do
-		$IPTABLES -t filter -A FORWARD -i $LAN_NIC -s $ipaddr -j DROP
+		$IPTABLES -t filter -A FORWARD -i $LAN_NIC -s $ipaddr -j ACCEPT
 	done
 fi	
 
